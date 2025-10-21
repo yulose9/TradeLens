@@ -1,0 +1,318 @@
+openapi: 3.0.3
+info:
+  title: Trading 212 API (Context7 Wrapper)
+  description: |
+    API specification for Trading 212 portfolio data accessed via Context7 wrapper.
+    This is a derived specification based on expected endpoints for the Trading Portfolio Widget.
+    
+    **Authentication**: API key in Authorization header (Trading 212 API Beta pattern)
+    **Rate Limits**: 60 requests/minute, 10 burst/10 seconds, 10,000/day (provisional - see context7-api-analysis.md)
+    **Base URL**: https://api.trading212.com/api/v0/ (provisional - configurable via BuildConfig)
+    
+    **Note**: Provisional values based on Trading 212 API Beta documentation and industry best practices.
+    All values are configurable and can be updated without major refactoring.
+  version: 1.0.0
+  contact:
+    name: TradeLens Development Team
+
+servers:
+  - url: https://api.trading212.com/api/v0
+    description: Trading 212 API Beta (Provisional)
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /portfolio:
+    get:
+      summary: Get Portfolio Snapshot
+      description: |
+        Retrieves the current portfolio snapshot including total value, profit/loss,
+        and all open positions.
+      operationId: getPortfolioSnapshot
+      tags:
+        - Portfolio
+      responses:
+        '200':
+          description: Successful response with portfolio data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioResponse'
+              example:
+                totalValue: "12345.67"
+                currency: "USD"
+                profitLoss: "1234.56"
+                profitLossPercentage: "11.11"
+                positions:
+                  - symbol: "AAPL"
+                    name: "Apple Inc."
+                    quantity: "10.5"
+                    averagePrice: "150.25"
+                    currentPrice: "165.50"
+                    profitLoss: "160.125"
+                    profitLossPercentage: "10.15"
+                  - symbol: "BTC"
+                    name: "Bitcoin"
+                    quantity: "0.5"
+                    averagePrice: "42000.00"
+                    currentPrice: "45000.00"
+                    profitLoss: "1500.00"
+                    profitLossPercentage: "7.14"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /portfolio/{accountId}:
+    get:
+      summary: Get Portfolio Snapshot for Specific Account
+      description: |
+        Retrieves portfolio snapshot for a specific account ID.
+        Used when user has multiple Trading 212 accounts (e.g., ISA, Invest).
+      operationId: getAccountPortfolio
+      tags:
+        - Portfolio
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Trading 212 account identifier
+          example: "ISA-12345"
+      responses:
+        '200':
+          description: Successful response with account portfolio data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Account not found"
+                message: "No account found with ID: ISA-12345"
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /positions:
+    get:
+      summary: Get All Open Positions
+      description: |
+        Retrieves list of all open positions across all accounts.
+        Lighter-weight alternative to /portfolio when only positions are needed.
+      operationId: getPositions
+      tags:
+        - Positions
+      parameters:
+        - name: accountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter positions by account ID
+        - name: symbols
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          description: Filter positions by ticker symbols (comma-separated)
+          example: "AAPL,BTC,TSLA"
+      responses:
+        '200':
+          description: Successful response with positions list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /health:
+    get:
+      summary: Health Check
+      description: Simple health check endpoint to verify API availability
+      operationId: healthCheck
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Trading 212 API key obtained from Trading 212 developer portal.
+        API keys are long-lived and manually managed. Include in Authorization header as: Authorization: <api_key>
+
+  schemas:
+    PortfolioResponse:
+      type: object
+      required:
+        - totalValue
+        - currency
+        - profitLoss
+        - profitLossPercentage
+        - positions
+      properties:
+        totalValue:
+          type: string
+          description: Total portfolio value (string to preserve decimal precision)
+          example: "12345.67"
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          pattern: '^[A-Z]{3}$'
+          example: "USD"
+        profitLoss:
+          type: string
+          description: Absolute profit/loss since inception
+          example: "1234.56"
+        profitLossPercentage:
+          type: string
+          description: Percentage profit/loss
+          example: "11.11"
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+          description: List of open positions (can be empty)
+
+    Position:
+      type: object
+      required:
+        - symbol
+        - name
+        - quantity
+        - averagePrice
+        - currentPrice
+        - profitLoss
+        - profitLossPercentage
+      properties:
+        symbol:
+          type: string
+          description: Ticker symbol
+          maxLength: 10
+          example: "AAPL"
+        name:
+          type: string
+          description: Full asset name
+          example: "Apple Inc."
+        quantity:
+          type: string
+          description: Number of shares/units held
+          example: "10.5"
+        averagePrice:
+          type: string
+          description: Average purchase price per unit
+          example: "150.25"
+        currentPrice:
+          type: string
+          description: Current market price per unit
+          example: "165.50"
+        profitLoss:
+          type: string
+          description: Absolute profit/loss for this position
+          example: "160.125"
+        profitLossPercentage:
+          type: string
+          description: Percentage profit/loss for this position
+          example: "10.15"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: "unauthorized"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid or expired API token"
+        retryAfter:
+          type: integer
+          description: Seconds to wait before retrying (for rate limit errors)
+          example: 60
+
+  responses:
+    Unauthorized:
+      description: Invalid or expired API token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "unauthorized"
+            message: "Invalid or expired API token"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+          example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "rate_limit_exceeded"
+            message: "Rate limit exceeded. Retry after 60 seconds."
+            retryAfter: 60
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "internal_server_error"
+            message: "An unexpected error occurred"
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "service_unavailable"
+            message: "Service is temporarily unavailable. Please try again later."
